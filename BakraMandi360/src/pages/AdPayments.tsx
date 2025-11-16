@@ -47,23 +47,53 @@ const Payments = () => {
         console.log('Payment data from backend:', response.data);
         
         // Transform the data to match our Payment interface
-        const transformedPayments: Payment[] = response.data.map((order: any) => ({
-          id: order.id,
-          orderId: order.orderId,
-          buyer: order.buyer || `Buyer ID: ${order.buyerId || 'Unknown'}`,
-          seller: order.seller || 'Unknown Seller',
-          buyerId: order.buyerId,
-          amount: order.total,
-          total: order.total,
-          subtotal: order.subtotal,
-          tax: order.tax,
-          method: order.paymentMethod,
-          paymentMethod: order.paymentMethod,
-          paymentDetails: order.paymentDetails,
-          status: order.status,
-          date: order.date,
-          items: order.items || [],
-        }));
+        const transformedPayments: Payment[] = response.data.map((order: any, index: number) => {
+          console.log(`\n=== Processing Payment ${index + 1} ===`);
+          console.log("Raw order data:", order);
+          console.log("Available order keys:", Object.keys(order));
+          
+          // Extract buyer name with multiple fallbacks
+          let buyerName = 'Unknown Buyer';
+          if (order.buyer) buyerName = order.buyer;
+          else if (order.buyerName) buyerName = order.buyerName;
+          else if (order.customerName) buyerName = order.customerName;
+          else if (order.user?.name) buyerName = order.user.name;
+          else if (order.buyerId) buyerName = `Buyer ID: ${order.buyerId}`;
+          
+          // Extract seller name with multiple fallbacks
+          let sellerName = 'Unknown Seller';
+          if (order.seller) sellerName = order.seller;
+          else if (order.sellerName) sellerName = order.sellerName;
+          else if (order.vendorName) sellerName = order.vendorName;
+          else if (order.merchant) sellerName = order.merchant;
+          
+          // Extract payment method with fallbacks
+          let paymentMethod = order.paymentMethod || order.method || order.type || 'Unknown';
+          
+          // Extract amount with fallbacks
+          let amount = order.total || order.amount || order.price || 0;
+          
+          const transformedPayment = {
+            id: order.id || `payment_${index + 1}`,
+            orderId: order.orderId || order.orderNumber || order.id || `ORD-${index + 1}`,
+            buyer: buyerName,
+            seller: sellerName,
+            buyerId: order.buyerId,
+            amount: amount,
+            total: amount,
+            subtotal: order.subtotal || amount,
+            tax: order.tax || 0,
+            method: paymentMethod,
+            paymentMethod: paymentMethod,
+            paymentDetails: order.paymentDetails || order.details || order.metadata,
+            status: order.status || 'Completed',
+            date: order.date || order.createdAt || order.timestamp || new Date().toISOString(),
+            items: order.items || order.products || [],
+          };
+          
+          console.log("Transformed payment:", transformedPayment);
+          return transformedPayment;
+        });
         
         setPayments(transformedPayments);
       } catch (error) {
@@ -127,15 +157,78 @@ const Payments = () => {
     return method.charAt(0).toUpperCase() + method.slice(1);
   };
 
-  const formatPaymentDetails = (details: { bankName?: string; accountNumber?: string; stripePaymentIntentId?: string } | null) => {
-    if (!details) return 'N/A';
-    if (details.bankName && details.accountNumber) {
-      return `${details.bankName} - ${details.accountNumber}`;
+  const formatPaymentDetails = (details: any, method: string, payment: Payment) => {
+    console.log("=== PAYMENT DETAILS DEBUG ===");
+    console.log("Payment ID:", payment.id);
+    console.log("Payment method:", method);
+    console.log("Payment details:", details);
+    console.log("Full payment object:", payment);
+    
+    if (!details) {
+      // If no details object, try to create meaningful info from payment method
+      switch (method?.toLowerCase()) {
+        case 'stripe':
+          return 'Stripe Payment';
+        case 'card':
+          return 'Card Payment';
+        case 'bank':
+          return 'Bank Transfer';
+        case 'cash':
+          return 'Cash Payment';
+        case 'online':
+          return 'Online Payment';
+        default:
+          return method ? `${method} Payment` : 'Payment Completed';
+      }
     }
-    if (details.stripePaymentIntentId) {
-      return 'Stripe Payment';
+    
+    // Handle different possible structures of payment details
+    if (typeof details === 'string') {
+      return details;
     }
-    return 'N/A';
+    
+    if (typeof details === 'object') {
+      // Try various possible field combinations
+      if (details.bankName && details.accountNumber) {
+        return `${details.bankName} - ${details.accountNumber}`;
+      }
+      if (details.bank && details.account) {
+        return `${details.bank} - ${details.account}`;
+      }
+      if (details.stripePaymentIntentId) {
+        return `Stripe - ${details.stripePaymentIntentId.substring(0, 20)}...`;
+      }
+      if (details.paymentIntentId) {
+        return `Stripe - ${details.paymentIntentId.substring(0, 20)}...`;
+      }
+      if (details.transactionId) {
+        return `Transaction ID: ${details.transactionId}`;
+      }
+      if (details.reference) {
+        return `Ref: ${details.reference}`;
+      }
+      if (details.cardLast4) {
+        return `Card ending in ${details.cardLast4}`;
+      }
+      if (details.last4) {
+        return `Card ending in ${details.last4}`;
+      }
+      
+      // If details object exists but no recognizable fields, show method info
+      const detailKeys = Object.keys(details);
+      if (detailKeys.length > 0) {
+        console.log("Available detail keys:", detailKeys);
+        // Try to use the first meaningful value
+        for (const key of detailKeys) {
+          if (details[key] && typeof details[key] === 'string' && details[key].length > 0) {
+            return `${key}: ${details[key]}`;
+          }
+        }
+      }
+    }
+    
+    // Final fallback based on payment method
+    return method ? `${method} Payment` : 'Payment Completed';
   };
 
   const getStatusColor = (status: string) => {
@@ -272,7 +365,7 @@ const Payments = () => {
                           <TableCell>{payment.seller || 'Unknown'}</TableCell>
                           <TableCell>{formatCurrency(payment.amount)}</TableCell>
                           <TableCell>{formatPaymentMethod(payment.paymentMethod)}</TableCell>
-                          <TableCell>{formatPaymentDetails(payment.paymentDetails)}</TableCell>
+                          <TableCell>{formatPaymentDetails(payment.paymentDetails, payment.paymentMethod, payment)}</TableCell>
                           <TableCell>
                             <div className="flex items-center">
                               <span className={`mr-2 rounded-full w-2 h-2 ${getStatusColor(payment.status)}`}></span>

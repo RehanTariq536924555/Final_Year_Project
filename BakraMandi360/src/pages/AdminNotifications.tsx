@@ -1,82 +1,43 @@
-import { useEffect, useState } from "react";
-import { Bell, ListPlus, ShoppingBag } from "lucide-react";
+import { useState } from "react";
+import { Bell, ListPlus, ShoppingBag, CheckCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-type Listing = {
-  id: number;
-  title?: string;
-  createdAt?: string;
-  seller?: { name?: string } | null;
-};
-
-type Order = {
-  id: string;
-  orderId: string;
-  total: number;
-  status: string;
-  date?: string | null;
-  buyer?: string | null;
-  seller?: string | null;
-};
-
-type NotificationItem = {
-  id: string;
-  type: "listing" | "order";
-  title: string;
-  subtitle: string;
-  date: string;
-};
+import { Button } from "@/components/ui/button";
+import { useNotifications } from "@/contexts/NotificationContext";
 
 const AdminNotifications = () => {
-  const [loading, setLoading] = useState(true);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const { notifications, unreadCount, markAsRead, markAllAsRead, refreshNotifications } = useNotifications();
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [listingsRes, ordersRes] = await Promise.all([
-          fetch("http://localhost:3001/listings"),
-          fetch("http://localhost:3001/payment/admin/all"),
-        ]);
+  const handleRefresh = async () => {
+    setLoading(true);
+    await refreshNotifications();
+    setLoading(false);
+  };
 
-        const listings: Listing[] = await listingsRes.json();
-        const orders: Order[] = await ordersRes.json();
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'listing':
+        return <ListPlus className="h-5 w-5 text-blue-500" />;
+      case 'order':
+        return <ShoppingBag className="h-5 w-5 text-green-500" />;
+      default:
+        return <Bell className="h-5 w-5 text-gray-500" />;
+    }
+  };
 
-        const listingNotifs: NotificationItem[] = (listings || []).slice(-20).map((l) => ({
-          id: `listing_${l.id}`,
-          type: "listing",
-          title: l.title || "New Listing Created",
-          subtitle: `Seller: ${l.seller?.name || "Unknown"}`,
-          date: new Date((l as any).createdAt || Date.now()).toLocaleString(),
-        }));
-
-        const orderNotifs: NotificationItem[] = (orders || []).slice(-20).map((o) => ({
-          id: `order_${o.id}`,
-          type: "order",
-          title: `New Order • ${o.orderId}`,
-          subtitle: `Buyer: ${o.buyer || "Unknown"} • Seller: ${o.seller || "Unknown"} • Rs ${
-            (o.total || 0).toLocaleString()
-          }`,
-          date: new Date(o.date || Date.now()).toLocaleString(),
-        }));
-
-        // Merge and sort by date desc (best-effort using string date)
-        const merged = [...listingNotifs, ...orderNotifs].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-        setNotifications(merged);
-      } catch (e) {
-        console.error("Failed to load notifications", e);
-        setNotifications([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const formatTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    
+    return date.toLocaleDateString();
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,8 +45,35 @@ const AdminNotifications = () => {
         <div className="flex items-center gap-2">
           <Bell className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-semibold">Notifications</h1>
+          {unreadCount > 0 && (
+            <Badge variant="destructive" className="animate-pulse">
+              {unreadCount} new
+            </Badge>
+          )}
         </div>
-        <Badge variant="outline" className="text-xs">{notifications.length} total</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs">{notifications.length} total</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="h-8"
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </Button>
+          {unreadCount > 0 && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={markAllAsRead}
+              className="h-8 bg-teal-600 hover:bg-teal-700"
+            >
+              <CheckCheck className="h-4 w-4 mr-1" />
+              Mark all read
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="p-8">
@@ -98,24 +86,54 @@ const AdminNotifications = () => {
             {loading ? (
               <div className="text-center py-12">Loading...</div>
             ) : notifications.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">No notifications</div>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Bell className="h-16 w-16 text-gray-300 mb-4" />
+                <p className="text-lg font-medium text-muted-foreground">No notifications yet</p>
+                <p className="text-sm text-muted-foreground mt-1">We'll notify you when something happens</p>
+              </div>
             ) : (
               <div className="space-y-3">
                 {notifications.map((n) => (
-                  <div key={n.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/40">
+                  <div 
+                    key={n.id} 
+                    className={`flex items-start gap-3 p-4 rounded-lg transition-all duration-200 hover:shadow-sm ${
+                      !n.read 
+                        ? "bg-blue-50 border-l-4 border-l-blue-500 shadow-sm" 
+                        : "bg-muted/40 hover:bg-muted/60"
+                    }`}
+                  >
                     <div className="mt-0.5">
-                      {n.type === "listing" ? (
-                        <ListPlus className="h-5 w-5 text-primary" />
-                      ) : (
-                        <ShoppingBag className="h-5 w-5 text-primary" />
-                      )}
+                      {getNotificationIcon(n.type)}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium">{n.title}</p>
-                        <span className="text-xs text-muted-foreground">{n.date}</span>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className={`font-medium ${!n.read ? "text-gray-900" : "text-gray-700"}`}>
+                              {n.title}
+                            </p>
+                            {!n.read && (
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{n.subtitle}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-muted-foreground">
+                              {formatTimeAgo(n.date)}
+                            </span>
+                            {!n.read && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => markAsRead(n.id)}
+                                className="h-6 px-2 text-xs hover:bg-blue-100 text-blue-600"
+                              >
+                                Mark as read
+                              </Button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-sm text-muted-foreground">{n.subtitle}</p>
                     </div>
                   </div>
                 ))}

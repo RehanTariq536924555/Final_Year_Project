@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Outlet, useLocation } from "react-router-
 import { CartProvider } from "@/contexts/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { SearchProvider } from "@/contexts/SearchContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 import Index1 from "./pages/Index1";
 import Index from "./pages/Index";
@@ -67,12 +68,14 @@ const AppLayout = () => {
 };
 
 const AdminLayout = () => (
-  <div className="flex h-screen w-full overflow-hidden">
-    <Sidebar />
-    <main className="flex-1 overflow-auto">
-      <Outlet />
-    </main>
-  </div>
+  <NotificationProvider>
+    <div className="flex h-screen w-full overflow-hidden">
+      <Sidebar />
+      <main className="flex-1 overflow-auto">
+        <Outlet />
+      </main>
+    </div>
+  </NotificationProvider>
 );
 
 const App = () => (

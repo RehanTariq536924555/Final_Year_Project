@@ -8,16 +8,19 @@ import {
   Settings,
   User,
   CreditCard,
-  Bell,
   Home,
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { NotificationDropdown } from "@/components/ui/notification-dropdown";
+import { useNotifications } from "@/contexts/NotificationContext";
+import { Badge } from "@/components/ui/badge";
 
 interface NavItemProps {
   icon: React.ElementType;
@@ -25,9 +28,10 @@ interface NavItemProps {
   href: string;
   active: boolean;
   collapsed: boolean;
+  badge?: number;
 }
 
-const NavItem = ({ icon: Icon, label, href, active, collapsed }: NavItemProps) => {
+const NavItem = ({ icon: Icon, label, href, active, collapsed, badge }: NavItemProps) => {
   return (
     <TooltipProvider>
       <Tooltip delayDuration={collapsed ? 100 : 1000}>
@@ -42,19 +46,37 @@ const NavItem = ({ icon: Icon, label, href, active, collapsed }: NavItemProps) =
             )}
             aria-label={label}
           >
-            <Icon
-              className={cn(
-                "h-5 w-5 flex-shrink-0 transition-colors duration-300",
-                active ? "text-white" : "text-teal-200 group-hover:text-white"
+            <div className="relative">
+              <Icon
+                className={cn(
+                  "h-5 w-5 flex-shrink-0 transition-colors duration-300",
+                  active ? "text-white" : "text-teal-200 group-hover:text-white"
+                )}
+              />
+              {badge && badge > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="absolute -top-2 -right-2 h-4 w-4 flex items-center justify-center p-0 text-xs font-bold animate-pulse"
+                >
+                  {badge > 99 ? '99+' : badge}
+                </Badge>
               )}
-            />
+            </div>
             <span
               className={cn(
-                "transition-all duration-300",
+                "transition-all duration-300 flex items-center justify-between w-full",
                 collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
               )}
             >
               {label}
+              {badge && badge > 0 && !collapsed && (
+                <Badge
+                  variant="destructive"
+                  className="ml-auto h-5 w-5 flex items-center justify-center p-0 text-xs font-bold animate-pulse"
+                >
+                  {badge > 99 ? '99+' : badge}
+                </Badge>
+              )}
             </span>
           </Link>
         </TooltipTrigger>
@@ -73,6 +95,7 @@ export function Sidebar() {
   const [mounted, setMounted] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { unreadCount } = useNotifications();
 
   // Animation mount effect
   useEffect(() => {
@@ -124,19 +147,22 @@ export function Sidebar() {
             <span className="text-2xl font-bold tracking-tight">BM</span>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-teal-200 hover:bg-teal-800 hover:text-white transition-colors duration-200"
-          onClick={() => setCollapsed(!collapsed)}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <NotificationDropdown />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-teal-200 hover:bg-teal-800 hover:text-white transition-colors duration-200"
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -178,6 +204,14 @@ export function Sidebar() {
             active={location.pathname === "/admin/payments"}
             collapsed={collapsed}
           />
+          <NavItem
+            icon={Bell}
+            label="Notifications"
+            href="/admin/notifications"
+            active={location.pathname === "/admin/notifications"}
+            collapsed={collapsed}
+            badge={unreadCount}
+          />
         </nav>
 
         <Separator className="my-4 bg-teal-500/30" />
@@ -195,13 +229,6 @@ export function Sidebar() {
             label="Profile"
             href="/admin/profile"
             active={location.pathname === "/admin/profile"}
-            collapsed={collapsed}
-          />
-          <NavItem
-            icon={Bell}
-            label="Notifications"
-            href="/admin/notifications"
-            active={location.pathname === "/admin/notifications"}
             collapsed={collapsed}
           />
         </nav>

@@ -39,7 +39,65 @@ const Sales: React.FC = () => {
       setIsLoading(true);
       try {
         const response = await axios.get('http://localhost:3001/payment/admin/all');
-        setSales(response.data);
+        console.log("=== SALES DATA FROM API ===");
+        console.log("Raw sales data:", response.data);
+        
+        if (response.data && response.data.length > 0) {
+          console.log("Sample sale:", response.data[0]);
+          console.log("Available keys:", Object.keys(response.data[0]));
+        }
+        
+        // Transform the data to ensure proper structure
+        const transformedSales = response.data.map((sale: any, index: number) => {
+          console.log(`\n=== Processing Sale ${index + 1} ===`);
+          console.log("Raw sale data:", sale);
+          
+          // Extract total with multiple fallbacks
+          let total = 0;
+          if (sale.total && typeof sale.total === 'number') {
+            total = sale.total;
+          } else if (sale.amount && typeof sale.amount === 'number') {
+            total = sale.amount;
+          } else if (sale.price && typeof sale.price === 'number') {
+            total = sale.price;
+          } else if (sale.subtotal && typeof sale.subtotal === 'number') {
+            total = sale.subtotal + (sale.tax || 0);
+          }
+          
+          // Extract subtotal
+          let subtotal = sale.subtotal || total - (sale.tax || 0) || total;
+          
+          // Extract tax
+          let tax = sale.tax || 0;
+          
+          // If we still don't have a total, calculate from items
+          if (total === 0 && sale.items && Array.isArray(sale.items)) {
+            total = sale.items.reduce((sum: number, item: any) => sum + (item.price || 0), 0);
+            subtotal = total;
+          }
+          
+          const transformedSale = {
+            id: sale.id || `sale_${index + 1}`,
+            orderId: sale.orderId || sale.orderNumber || sale.id || `ORD-${index + 1}`,
+            items: sale.items || [{ id: '1', title: 'Unknown Item', price: total }],
+            subtotal: subtotal,
+            tax: tax,
+            total: total,
+            paymentMethod: sale.paymentMethod || sale.method || 'Unknown',
+            paymentDetails: sale.paymentDetails || null,
+            status: sale.status || 'Completed',
+            animalType: sale.animalType || null,
+            breed: sale.breed || null,
+            buyer: sale.buyer || sale.buyerName || 'Unknown Buyer',
+            seller: sale.seller || sale.sellerName || 'Unknown Seller',
+            date: sale.date || sale.createdAt || new Date().toISOString(),
+          };
+          
+          console.log("Transformed sale:", transformedSale);
+          return transformedSale;
+        });
+        
+        setSales(transformedSales);
       } catch (error) {
         console.error('Error fetching sales:', error);
         toast.error('Failed to load sales data. Please try again.');
@@ -143,7 +201,10 @@ const Sales: React.FC = () => {
     }
   });
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | null | undefined) => {
+    if (amount === null || amount === undefined || isNaN(amount)) {
+      return 'Rs. 0';
+    }
     return `Rs. ${amount.toLocaleString('en-PK')}`;
   };
 
@@ -151,10 +212,76 @@ const Sales: React.FC = () => {
     return items.map(item => item.title).join(', ');
   };
 
-  const formatPaymentDetails = (details: { bankName?: string; accountNumber?: string } | null) => {
-    if (!details) return 'None';
-    const { bankName, accountNumber } = details;
-    return bankName && accountNumber ? `Bank: ${bankName}, Account: ${accountNumber}` : 'None';
+  const formatPaymentDetails = (details: any, paymentMethod?: string) => {
+    console.log("=== SALES PAYMENT DETAILS DEBUG ===");
+    console.log("Payment details:", details);
+    console.log("Payment method:", paymentMethod);
+    
+    if (!details) {
+      // If no details object, try to create meaningful info from payment method
+      switch (paymentMethod?.toLowerCase()) {
+        case 'stripe':
+          return 'Stripe Payment';
+        case 'card':
+          return 'Card Payment';
+        case 'bank':
+          return 'Bank Transfer';
+        case 'cash':
+          return 'Cash Payment';
+        case 'online':
+          return 'Online Payment';
+        default:
+          return paymentMethod ? `${paymentMethod} Payment` : 'Payment Completed';
+      }
+    }
+    
+    // Handle different possible structures of payment details
+    if (typeof details === 'string') {
+      return details;
+    }
+    
+    if (typeof details === 'object') {
+      // Try various possible field combinations
+      if (details.bankName && details.accountNumber) {
+        return `Bank: ${details.bankName}, Account: ${details.accountNumber}`;
+      }
+      if (details.bank && details.account) {
+        return `Bank: ${details.bank}, Account: ${details.account}`;
+      }
+      if (details.stripePaymentIntentId) {
+        return `Stripe - ${details.stripePaymentIntentId.substring(0, 20)}...`;
+      }
+      if (details.paymentIntentId) {
+        return `Stripe - ${details.paymentIntentId.substring(0, 20)}...`;
+      }
+      if (details.transactionId) {
+        return `Transaction ID: ${details.transactionId}`;
+      }
+      if (details.reference) {
+        return `Ref: ${details.reference}`;
+      }
+      if (details.cardLast4) {
+        return `Card ending in ${details.cardLast4}`;
+      }
+      if (details.last4) {
+        return `Card ending in ${details.last4}`;
+      }
+      
+      // If details object exists but no recognizable fields, show method info
+      const detailKeys = Object.keys(details);
+      if (detailKeys.length > 0) {
+        console.log("Available detail keys:", detailKeys);
+        // Try to use the first meaningful value
+        for (const key of detailKeys) {
+          if (details[key] && typeof details[key] === 'string' && details[key].length > 0) {
+            return `${key}: ${details[key]}`;
+          }
+        }
+      }
+    }
+    
+    // Final fallback based on payment method
+    return paymentMethod ? `${paymentMethod} Payment` : 'Payment Completed';
   };
 
   const filterSalesByTab = (sales: Sale[], tab: string) => {
@@ -316,16 +443,23 @@ const Sales: React.FC = () => {
                     </TableHeader>
                     <TableBody>
                       {filterSalesByTab(sortedSales, tab)
-                        .map((sale) => (
+                        .map((sale) => {
+                          console.log("=== SALES DEBUG ===");
+                          console.log("Sale data:", sale);
+                          console.log("Sale total:", sale.total);
+                          console.log("Sale subtotal:", sale.subtotal);
+                          console.log("Sale tax:", sale.tax);
+                          
+                          return (
                           <TableRow key={sale.id} className="hover:bg-muted/50 transition-colors duration-200">
-                            {/* <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{sale.id}</TableCell> */}
+                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{sale.id}</TableCell>
                             <TableCell className="text-xs sm:text-sm font-roboto text-foreground px-4 py-3">{formatItems(sale.items)}</TableCell>
-                            {/* <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{sale.orderId}</TableCell> */}
-                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatCurrency(sale.subtotal)}</TableCell>
-                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatCurrency(sale.tax)}</TableCell>
-                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatCurrency(sale.total)}</TableCell>
+                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{sale.orderId}</TableCell>
+                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatCurrency(sale.subtotal || 0)}</TableCell>
+                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatCurrency(sale.tax || 0)}</TableCell>
+                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3 font-semibold">{formatCurrency(sale.total || 0)}</TableCell>
                             <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{sale.paymentMethod}</TableCell>
-                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatPaymentDetails(sale.paymentDetails)}</TableCell>
+                            <TableCell className="text-xs sm:text-sm font-roboto text-foreground whitespace-nowrap px-4 py-3">{formatPaymentDetails(sale.paymentDetails, sale.paymentMethod)}</TableCell>
                             <TableCell className="text-xs sm:text-sm font-roboto whitespace-nowrap px-4 py-3">
                               <div className="flex items-center">
                                 <span className={`mr-2 rounded-full w-2 h-2 ${
@@ -366,7 +500,8 @@ const Sales: React.FC = () => {
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                     </TableBody>
                   </Table>
                 </div>
